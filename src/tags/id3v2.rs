@@ -1,22 +1,22 @@
-use std::fs::File;
-use std::io::{Read, Seek, SeekFrom};
+use std::io::{BufRead, Seek, SeekFrom};
 
 use crate::AudioInfo;
+use crate::gmi_error::{GMIError, GMIResult};
 
-pub fn read_id3v2_tag(file: &mut File) -> Option<AudioInfo> {
+pub fn read_id3v2_tag<R: BufRead + Seek>(reader: &mut R) -> GMIResult<AudioInfo> {
     let mut buffer = [0u8; 10];
-    file.seek(SeekFrom::Start(0)).ok()?;
-    file.read_exact(&mut buffer).ok()?;
+    reader.seek(SeekFrom::Start(0)).ok();
+    reader.read_exact(&mut buffer).ok();
 
-    if &buffer[0..3] == b"ID3" {
+
         let id3_size = ((buffer[6] as usize) << 21)
             | ((buffer[7] as usize) << 14)
             | ((buffer[8] as usize) << 7)
             | (buffer[9] as usize);
-        file.seek(SeekFrom::Start(id3_size as u64)).ok()?;
+        reader.seek(SeekFrom::Start(id3_size as u64)).ok();
 
 
-        file.read_exact(&mut buffer).ok()?;
+        reader.read_exact(&mut buffer).ok();
 
         loop {
             if buffer[0] == 0xFF && (buffer[1] & 0xE0) == 0xE0 {
@@ -62,23 +62,18 @@ pub fn read_id3v2_tag(file: &mut File) -> Option<AudioInfo> {
                 info.sample_rate = Some(sample_rate);
                 info.channels = Some(channels);
 
-                // Estimation de la durée basée sur la taille du fichier et le bitrate
-                let file_size = file.metadata().ok()?.len();
-                info.file_size = Some(file_size);
 
-                if let Some(bitrate) = info.bitrate {
-                    info.duration = Some(file_size as f64 * 8.0 / bitrate as f64);
-                }
 
-                return Some(info);
+                return Ok(info);
             } else {
-                if let Err(e) = file.read_exact(&mut buffer) {
+                if let Err(e) = reader.read_exact(&mut buffer) {
                     println!("Erreur lors de la lecture des données après ID3: {}", e);
-                    return None;
+                    return Err(GMIError::CorruptedMediaFile);
                 }
             }
         }
-    }
+}
 
-    None
+pub fn matches(header: &[u8]) -> bool{
+    header.starts_with(b"ID3")
 }

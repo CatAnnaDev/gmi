@@ -1,13 +1,12 @@
-use std::fs::File;
-use std::io::{Read, Seek, SeekFrom};
+use std::io::{BufRead, Seek, SeekFrom};
 use crate::AudioInfo;
+use crate::gmi_error::GMIResult;
 
-pub fn read_aac_info(file: &mut File) -> Option<AudioInfo> {
+pub fn read_aac_info<R: BufRead + Seek>(reader: &mut R) -> GMIResult<AudioInfo> {
     let mut buffer = [0u8; 7];
-    file.seek(SeekFrom::Start(0)).ok()?;
-    file.read_exact(&mut buffer).ok()?;
+    reader.seek(SeekFrom::Start(0)).ok();
+    reader.read_exact(&mut buffer).ok();
 
-    if &buffer[0..2] == b"\xFF\xF1" || &buffer[0..2] == b"\xFF\xF9" {
 
         let mut info = AudioInfo::new("AAC");
         // Sample rate
@@ -22,9 +21,6 @@ pub fn read_aac_info(file: &mut File) -> Option<AudioInfo> {
         let channel_config = ((buffer[2] & 0x01) << 2) | ((buffer[3] >> 6) & 0x03);
         info.channels = Some(channel_config as u16);
 
-        // Taille du fichier
-        let file_size = file.metadata().ok()?.len();
-        info.file_size = Some(file_size);
 
         // Codec
         info.codec = Some("AAC (ADTS)".to_string());
@@ -36,15 +32,16 @@ pub fn read_aac_info(file: &mut File) -> Option<AudioInfo> {
         if let Some(sample_rate) = info.sample_rate {
             let frame_duration = 1024.0 / sample_rate as f64;
             let bitrate = ((frame_length as f64 * 8.0) / frame_duration) as u32;
-            info.bitrate = Some(bitrate);
-            info.duration = Some(file_size as f64 * 8.0 / bitrate as f64);
-        }
+            info.bitrate = Some(bitrate); }
 
         // Durée
 
 
-        return Some(info);
-    }
+        Ok(info)
 
-    None
+}
+
+
+pub fn matches(header: &[u8]) -> bool{
+    header.starts_with(b"\xFF\xF1") || header.starts_with(b"\xFF\xF9")
 }
